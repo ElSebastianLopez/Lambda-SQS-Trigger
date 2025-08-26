@@ -10,35 +10,28 @@ def handler(event, context):
     print(f"=== Lambda ejecutada: {datetime.now().isoformat()} ===")
     print(f"Environment: {os.environ.get('ENVIRONMENT', 'unknown')}")
     
-    # Configuración de endpoints por ambiente y tipo
-    # AQUÍ CONFIGURAS TUS ENDPOINTS REALES
-    endpoints_config = {
-        "dev": {
-            "base_url": "http://host.docker.internal:8091/dev",
-            "endpoints": {
-                "masivo-kit": "",  # Agregar cuando tengas el endpoint
-                "masivo-cotizacion": "",  # Agregar cuando tengas el endpoint
-                "masivo-emision": "",  # Agregar cuando tengas el endpoint
-                "masivo-suscripcion-cotizacion": "/cotizacion/api/v1/lambda/process-sqs-event"
-            }
+    # Obtener URLs base de variables de entorno
+    base_url_emision = os.environ.get('BASE_URL_EMISION', 'http://localhost:8080')
+    base_url_suscripcion = os.environ.get('BASE_URL_SUSCRIPCION', 'http://localhost:8080')
+    
+    # Obtener endpoints de variables de entorno
+    endpoint_polizas = os.environ.get('ENDPOINT_POLIZAS', '/api/v1/lambda/process-sqs-event/emision')
+    endpoint_kit = os.environ.get('ENDPOINT_KIT', '/api/v1/lambda/process-sqs-event/kit')
+    endpoint_suscripcion_cotizacion = os.environ.get('ENDPOINT_SUSCRIPCION_COTIZACION', '/api/v1/lambda/process-sqs-event')
+    
+    # Mapeo de tipos de cola a configuración (URL base + endpoint)
+    queue_config = {
+        "masivo-polizas": {
+            "base_url": base_url_emision,
+            "endpoint": endpoint_polizas
         },
-        "qa": {
-            "base_url": "http://localhost:8092/qa",  # Cambiar por tu URL real de QA
-            "endpoints": {
-                "masivo-kit": "",
-                "masivo-cotizacion": "",
-                "masivo-emision": "",
-                "masivo-suscripcion-cotizacion": "/cotizacion/api/v1/lambda/process-sqs-event"
-            }
+        "masivo-kit": {
+            "base_url": base_url_emision,
+            "endpoint": endpoint_kit
         },
-        "uat": {
-            "base_url": "http://localhost:8093/uat",  # Cambiar por tu URL real de UAT
-            "endpoints": {
-                "masivo-kit": "",
-                "masivo-cotizacion": "",
-                "masivo-emision": "",
-                "masivo-suscripcion-cotizacion": "/cotizacion/api/v1/lambda/process-sqs-event"
-            }
+        "masivo-suscripcion-cotizacion": {
+            "base_url": base_url_suscripcion,
+            "endpoint": endpoint_suscripcion_cotizacion
         }
     }
     
@@ -58,43 +51,40 @@ def handler(event, context):
             print(f"\n📨 Procesando mensaje de: {queue_name}")
             
             # Detectar ambiente y tipo de cola
-            # Formato: dev-andina-core-masivo-suscripcion-cotizacion
             parts = queue_name.split('-')
             ambiente = parts[0] if len(parts) > 0 else None
             
             # Detectar tipo de cola
             queue_type = None
-            if 'masivo-kit' in queue_name:
+            if 'masivo-polizas' in queue_name:
+                queue_type = 'masivo-polizas'
+            elif 'masivo-kit' in queue_name:
                 queue_type = 'masivo-kit'
-            elif 'masivo-cotizacion' in queue_name and 'suscripcion' not in queue_name:
-                queue_type = 'masivo-cotizacion'
-            elif 'masivo-emision' in queue_name:
-                queue_type = 'masivo-emision'
             elif 'masivo-suscripcion-cotizacion' in queue_name:
                 queue_type = 'masivo-suscripcion-cotizacion'
             
             print(f"🏷️  Ambiente detectado: {ambiente}")
             print(f"📦 Tipo de cola: {queue_type}")
             
-            # Verificar si tenemos configuración para este ambiente
-            if ambiente not in endpoints_config:
-                print(f"❌ No hay configuración para ambiente: {ambiente}")
-                continue
-                
-            # Obtener endpoint
-            env_config = endpoints_config[ambiente]
-            endpoint_path = env_config['endpoints'].get(queue_type, '')
+            # Obtener configuración para este tipo de cola
+            config = queue_config.get(queue_type)
             
-            if not endpoint_path:
-                print(f"⏭️  No hay endpoint configurado para {queue_type} en {ambiente}")
+            if not config:
+                print(f"⏭️  No hay configuración para tipo de cola: {queue_type}")
                 continue
                 
+            # Obtener URL base y endpoint específicos
+            base_url = config['base_url']
+            endpoint_path = config['endpoint']
+            
             # Construir URL completa
-            full_url = env_config['base_url'] + endpoint_path
+            full_url = base_url.rstrip('/') + endpoint_path
             print(f"🎯 URL del servicio: {full_url}")
             
             # Preparar el evento para enviar
             message_body = record.get('body', '{}')
+            print(f"📦 Cuerpo del mensaje: {message_body}")
+            
             lambda_event = {
                 "Records": [{
                     "messageId": record.get('messageId'),
@@ -123,7 +113,7 @@ def handler(event, context):
                 
                 print(f"✅ Respuesta: {response.status_code}")
                 if response.status_code == 200:
-                    print(f"📄 Body: {response.text[:200]}...")  # Primeros 200 chars
+                    print(f"📄 Body: {response.text[:200]}...")
                 else:
                     print(f"❌ Error: {response.text}")
                     

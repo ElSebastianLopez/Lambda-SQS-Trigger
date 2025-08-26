@@ -29,7 +29,25 @@ variable "environments" {
 }
 
 variable "queue_types" {
-  default = ["masivo-kit", "masivo-cotizacion", "masivo-emision", "masivo-suscripcion-cotizacion"]
+  default = ["masivo-polizas", "masivo-suscripcion-cotizacion", "masivo-kit"]
+}
+
+variable "emision_urls" {
+  type = map(string)
+  default = {
+    dev = "https://andinavidasegurosdevbackend.linktic.com/emision"
+    qa  = "https://andinavidasegurosqabackend.linktic.com/emision"
+    uat = "https://andinavidasegurosuatbackend.linktic.com/emision"
+  }
+}
+
+variable "suscripcion_urls" {
+  type = map(string)
+  default = {
+    dev = "https://andinavidasegurosdevbackend.linktic.com/suscripcion-cotizacion"
+    qa  = "https://andinavidasegurosqabackend.linktic.com/suscripcion-cotizacion"
+    uat = "https://andinavidasegurosuatbackend.linktic.com/suscripcion-cotizacion"
+  }
 }
 
 # IAM Role para Lambda
@@ -87,11 +105,16 @@ resource "aws_lambda_function" "processor" {
   source_code_hash = filebase64sha256(data.archive_file.lambda_zip.output_path)
   timeout         = 60
   
-  environment {
-    variables = {
-      ENVIRONMENT = each.key
-    }
+environment {
+  variables = {
+    ENVIRONMENT          = each.key
+    BASE_URL_EMISION     = var.emision_urls[each.key]
+    BASE_URL_SUSCRIPCION = var.suscripcion_urls[each.key]
+    ENDPOINT_POLIZAS     = "/api/v1/lambda/process-sqs-event/emision"
+    ENDPOINT_KIT         = "/api/v1/lambda/process-sqs-event/kit"
+    ENDPOINT_COTIZACION  = "/api/v1/lambda/process-sqs-event"
   }
+}
 }
 
 # Event Source Mappings (cada lambda escucha sus 4 colas)
